@@ -1,3 +1,4 @@
+
 # httprecon3.py – Advanced Web Reconnaissance Tool
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -27,52 +28,73 @@
 
 ## Installation
 
-<code>git clone https://github.com/yourusername/httprecon3.py.git</code>  
-<code>cd httprecon3.py</code>
+```sh
+git clone https://github.com/yourusername/httprecon3.py.git
+ ```  
+```sh 
+d httprecon3.py 
+```
 
 ### Requirements
 
-<code>pip install requests beautifulsoup4 cssutils selenium colorama dnspython</code>
+```sh 
+ip install requests beautifulsoup4 cssutils selenium colorama dnspython 
+```
 
 > **ChromeDriver**: Required for screenshots.  
 > Download from: https://chromedriver.chromium.org/downloads  
 > Or use `webdriver-manager`:
 
-<code>pip install webdriver-manager</code>
+```sh 
+pip install webdriver-manager 
+```
 
 Then modify the script to auto-manage ChromeDriver:
 
-<code>from webdriver_manager.chrome import ChromeDriverManager  
+```sh 
+from webdriver_manager.chrome import ChromeDriverManager  
 service = Service(ChromeDriverManager().install())  
-driver = webdriver.Chrome(service=service, options=options)</code>
+driver = webdriver.Chrome(service=service, options=options) 
+```
 
 ---
 
 ## Usage
 
-<code>python3 httprecon3.py [URL] [OPTIONS]</code>
+```sh python3 httprecon3.py [URL] [OPTIONS] 
+```
 
 ### Examples
 
-<code># Basic crawl  
-python3 httprecon3.py example.com</code>
+```sh #
+ Basic crawl  
+python3 httprecon3.py example.com 
+```
 
-<code># Crawl with custom depth, extensions, and output  
-python3 httprecon3.py example.com -d 2 -e js css json -o assets.txt</code>
+```sh 
+# Crawl with custom depth, extensions, and output  
+python3 httprecon3.py example.com -d 2 -e js css json -o assets.txt 
+```
 
-<code># Hunt for secrets + API keys  
-python3 httprecon3.py example.com --extract-keys -k password token api_key</code>
+```sh 
+# Hunt for secrets + API keys  
+python3 httprecon3.py example.com --extract-keys -k password token api_key
+```
 
-<code># Brute-force subdomains + screenshots  
-python3 httprecon3.py example.com --subdomains --screenshots</code>
+```sh 
+# Brute-force subdomains + screenshots  
+python3 httprecon3.py example.com --subdomains --screenshots 
+```
 
-<code># Full recon with stealth and AI report  
+```sh 
+# Full recon with stealth and AI report  
 python3 httprecon3.py example.com \  
   --subdomains \  
   --extract-keys \  
   --screenshots shots/ \  
   --stealth 2 5 \  
-  --wordlist big-wordlist.txt</code>
+  --wordlist big-wordlist.txt 
+```
 
 ---
 
@@ -96,7 +118,8 @@ python3 httprecon3.py example.com \
 
 ## Sample Output
 
-<code>[+] Starting recon on: https://example.com  
+```sh 
+[+] Starting recon on: https://example.com  
 [+] Domain: example.com | Depth: 3 | Stealth: 1.0-3.0s  
 [+] Brute-forcing subdomains for example.com...  
 [+] Found 12 valid subdomains  
@@ -133,9 +156,10 @@ AI RECON REPORT
 ============================================================  
 High-value assets discovered: admin panel, API endpoints, S3 bucket.  
 Critical: AWS keys exposed in JS. Immediate rotation required.  
-Next steps: Test admin login, enumerate API, check bucket permissions.</code>
+Next steps: Test admin login, enumerate API, check bucket permissions. ```
 
 ---
+```
 
 ## Wordlists & Patterns
 
@@ -151,10 +175,12 @@ Next steps: Test admin login, enumerate API, check bucket permissions.</code>
 
 Screenshots are saved in the specified directory:
 
-<code>screenshots/  
+```sh 
+screenshots/  
 ├── example.com_1700000000.png  
 ├── admin.example.com_1700000001.png  
-└── api.example.com_1700000002.png</code>
+└── api.example.com_1700000002.png 
+```
 
 ---
 
@@ -168,16 +194,18 @@ Do **not** use on systems you do not own or have permission to test.
 ## Contributing
 
 1. Fork it
-2. Create your feature branch (<code>git checkout -b feature/new-patterns</code>)
-3. Commit (<code>git commit -m 'Add new API key patterns'</code>)
-4. Push (<code>git push origin feature/new-patterns</code>)
+2. Create your feature branch (<code>git checkout -b feature/new-patterns </code>)
+3. Commit (<code>git commit -m 'Add new API key patterns' </code>)
+4. Push (<code>git push origin feature/new-patterns </code>)
 5. Open a Pull Request
 
 ---
 
 ## License
 
-<code>MIT License</code>
+```sh 
+MIT License 
+```
 
 ---
 
