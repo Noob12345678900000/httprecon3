@@ -25,6 +25,20 @@ from selenium.webdriver.chrome.service import Service
 from dns.resolver import Resolver
 import threading
 
+BANNER = """
+888      888    888                                                                      .d8888b.  
+888      888    888                                                                     d88P  Y88b 
+888      888    888                                                                          .d88P 
+88888b.  888888 888888 88888b.         888d888 .d88b.   .d8888b .d88b.  88888b.             8888"  
+888 "88b 888    888    888 "88b        888P"  d8P  Y8b d88P"   d88""88b 888 "88b             "Y8b. 
+888  888 888    888    888  888 888888 888    88888888 888     888  888 888  888 888888 888    888 
+888  888 Y88b.  Y88b.  888 d88P        888    Y8b.     Y88b.   Y88..88P 888  888        Y88b  d88P 
+888  888  "Y888  "Y888 88888P"         888     "Y8888   "Y8888P "Y88P"  888  888         "Y8888P"  
+                       888                                                                         
+                       888                                                                         
+                       888
+"""
+
 init(autoreset=True)
 cssutils.log.setLevel(logging.CRITICAL)
 
@@ -1068,6 +1082,8 @@ Next steps?
 
 # === CLI ===
 if __name__ == "__main__":
+    print(BANNER)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
     parser.add_argument("-o", "--output")
