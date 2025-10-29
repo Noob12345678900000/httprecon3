@@ -25,6 +25,10 @@ from selenium.webdriver.chrome.service import Service
 from dns.resolver import Resolver
 import threading
 
+import concurrent.futures
+from concurrent.futures import as_completed
+from collections import deque
+
 BANNER = """
 888      888    888                                                                      .d8888b.  
 888      888    888                                                                     d88P  Y88b 
@@ -478,7 +482,42 @@ def take_screenshot(url, output_dir='screenshots'):
         driver.quit()
 
 # === EXTENDED LINK EXTRACTION (50+ URL TYPES) ===
-def extract_all_links(html, base_url, base_domain):
+# === HELPERS ===
+def fetch_page(url, headers, timeout, stealth_delay):
+    time.sleep(random.uniform(stealth_delay[0], stealth_delay[1]))
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        return resp
+    except Exception as e:
+        print(f"{Fore.RED}[!] Error fetching {url}: {e}", file=sys.stderr)
+        return None
+
+def process_page(content, ctype, ext, url, base_domain, keywords, extract_keys):
+    assets = set()
+    kws = []
+    apis = []
+    if 'text/html' in ctype or ext == 'html':
+        assets.update(extract_links_from_html(content, url, base_domain))
+        if keywords:
+            kws.extend(search_keywords(content, url, keywords))
+        if extract_keys:
+            apis.extend(extract_api_keys(content, url))
+    elif 'text/css' in ctype or ext == 'css':
+        assets.update(extract_links_from_css(content, url, base_domain))
+        if keywords:
+            kws.extend(search_keywords(content, url, keywords))
+        if extract_keys:
+            apis.extend(extract_api_keys(content, url))
+    elif 'javascript' in ctype or ext in ('js', 'mjs'):
+        assets.update(extract_links_from_js(content, url, base_domain))
+        if keywords:
+            kws.extend(search_keywords(content, url, keywords))
+        if extract_keys:
+            apis.extend(extract_api_keys(content, url))
+    return assets, kws, apis
+
+# === EXTENDED LINK EXTRACTION (50+ URL TYPES) ===
+def extract_links_from_html(html, base_url, base_domain):
     soup = BeautifulSoup(html, 'html.parser')
     links = set()
 
@@ -600,11 +639,11 @@ def extract_all_links(html, base_url, base_domain):
         links.add(normalize_url(base_url, tag['href']))
 
     # 26. <meta property="og:image">
-    for tag in soup.find_all('meta', property='og:image', content=True):
+    for tag in soup.find_all('meta', attrs={'property': 'og:image', 'content': True}):
         links.add(normalize_url(base_url, tag['content']))
 
     # 27. <meta name="twitter:image">
-    for tag in soup.find_all('meta', attrs={'name': 'twitter:image'}, content=True):
+    for tag in soup.find_all('meta', attrs={'name': 'twitter:image', 'content': True}):
         links.add(normalize_url(base_url, tag['content']))
 
     # 28. JSON-LD @id / url
@@ -980,12 +1019,14 @@ def download_and_parse(url, session, base_domain, visited, depth, max_depth, ext
     return assets, kws, apis
 
 # === MAIN CRAWL ===
+# === MAIN CRAWL (FULLY FIXED & THREADED) ===
 def crawl(target_url, output_file=None, extensions=None, depth=MAX_DEPTH, keywords=None, extract_keys=False, screenshot_dir=None, stealth_delay=(DELAY_MIN, DELAY_MAX), subdomains_brute=False, wordlist_file=None):
     if not target_url.startswith(('http://', 'https://')):
         target_url = 'https://' + target_url
     parsed = urlparse(target_url)
     base_domain = parsed.netloc
 
+    # --- Subdomain Brute-Force ---
     sub_urls = []
     if subdomains_brute:
         print(f"{Fore.CYAN}[+] Brute-forcing subdomains for {base_domain}...")
@@ -996,12 +1037,14 @@ def crawl(target_url, output_file=None, extensions=None, depth=MAX_DEPTH, keywor
         sub_urls = brute_force_subdomains(base_domain, wl)
         print(f"{Fore.GREEN}[+] Found {len(sub_urls)} valid subdomains")
 
-    session = requests.Session()
+    # --- Session & Tracking ---
+    session = get_session(verify_ssl=True)  # Normal SSL verification
     visited = set()
     all_assets = set()
     all_kws = []
     all_apis = []
 
+    # --- Status Output ---
     print(f"{Fore.CYAN}[+] Starting recon on: {target_url}")
     print(f"{Fore.CYAN}[+] Domain: {base_domain} | Depth: {depth} | Stealth: {stealth_delay[0]}-{stealth_delay[1]}s")
     if keywords:
@@ -1013,19 +1056,73 @@ def crawl(target_url, output_file=None, extensions=None, depth=MAX_DEPTH, keywor
     for sub in sub_urls:
         print(f"{Fore.GREEN}[+] Subdomain: {sub}")
 
+    # --- Queue Setup ---
     urls_to_crawl = [target_url] + sub_urls
-    for start_url in urls_to_crawl:
-        a, kw, ap = download_and_parse(start_url, session, base_domain, visited, 0, depth, extensions, keywords or [], extract_keys, screenshot_dir, stealth_delay)
-        all_assets.update(a)
-        all_kws.extend(kw)
-        all_apis.extend(ap)
+    to_visit = [(u, 0) for u in urls_to_crawl]
+    for u, _ in to_visit:
+        visited.add(u)
 
+    # --- Threaded Crawling Loop ---
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        while to_visit:
+            # Submit all URLs at current depth
+            futures = {
+                executor.submit(
+                    fetch_url_with_fallback,
+                    url, session, TIMEOUT, stealth_delay
+                ): (url, dep)
+                for url, dep in to_visit
+            }
+
+            next_level = []
+            for future in concurrent.futures.as_completed(futures):
+                url, dep = futures[future]
+                resp = future.result()
+
+                if resp is None or resp.status_code != 200:
+                    continue
+
+                # --- Parse Response ---
+                ctype = resp.headers.get('Content-Type', '').lower()
+                parsed_url = urlparse(url)
+                path = parsed_url.path or '/'
+                ext = path.split('.')[-1].lower() if '.' in path else ''
+                content = resp.text
+
+                # Process page (links, keywords, keys)
+                assets, kws, apis = process_page(
+                    content, ctype, ext, url, base_domain,
+                    keywords or [], extract_keys
+                )
+                all_assets.update(assets)
+                all_kws.extend(kws)
+                all_apis.extend(apis)
+
+                # Screenshot (background thread)
+                if screenshot_dir and 'text/html' in ctype:
+                    threading.Thread(
+                        target=take_screenshot,
+                        args=(url, screenshot_dir),
+                        daemon=True
+                    ).start()
+
+                # --- Follow Links (only HTML & within depth) ---
+                if dep < depth and 'text/html' in ctype:
+                    html_links = extract_links_from_html(content, url, base_domain)
+                    for link in html_links:
+                        if link not in visited:
+                            visited.add(link)
+                            next_level.append((link, dep + 1))
+
+            to_visit = next_level  # Move to next depth
+
+    # --- Filter by extensions if requested ---
     if extensions:
         all_assets = {a for a in all_assets if any(a.lower().endswith('.' + e.lower()) for e in extensions)}
 
     unique_assets = sorted(all_assets)
 
-    # Output
+    # --- Output Results ---
     print(f"\n{Fore.GREEN}[+] Found {len(unique_assets)} unique assets:\n")
     for asset in unique_assets:
         print(f"{Fore.WHITE}{asset}")
@@ -1035,7 +1132,7 @@ def crawl(target_url, output_file=None, extensions=None, depth=MAX_DEPTH, keywor
                 f.write(a + '\n')
         print(f"\n{Fore.GREEN}[+] Saved to {output_file}")
 
-    # Keyword findings
+    # --- Keyword Findings ---
     if all_kws:
         print(f"\n{Fore.RED}{'='*60}")
         print(f"{Fore.RED} KEYWORD FINDINGS ({len(all_kws)})")
@@ -1045,7 +1142,7 @@ def crawl(target_url, output_file=None, extensions=None, depth=MAX_DEPTH, keywor
             print(f"{Fore.MAGENTA}Keyword: {f['keyword']} | Line {f['line']} | Match: {f['match']}")
             print(f"{Fore.CYAN}Context:\n{f['context']}\n{Fore.RED}{'-'*50}")
 
-    # API keys
+    # --- API Key Findings ---
     if all_apis:
         print(f"\n{Fore.RED}{'='*60}")
         print(f"{Fore.RED} POTENTIAL API KEYS ({len(all_apis)})")
@@ -1058,6 +1155,32 @@ def crawl(target_url, output_file=None, extensions=None, depth=MAX_DEPTH, keywor
         print(f"\n{Fore.GREEN}[+] No API keys found.")
 
     return unique_assets, base_domain, all_kws, all_apis
+
+
+# --------------------------------------------------------------
+# 4. MODIFIED – the crawling loop now uses the fallback helper
+# --------------------------------------------------------------
+def get_session(verify_ssl: bool = True) -> requests.Session:
+    sess = requests.Session()
+    sess.headers.update(get_random_headers())
+    sess.verify = verify_ssl
+    return sess
+
+def fetch_page(url: str, session: requests.Session, timeout: int, stealth_delay: tuple[float, float]):
+    time.sleep(random.uniform(stealth_delay[0], stealth_delay[1]))
+    try:
+        return session.get(url, timeout=timeout)
+    except Exception as e:
+        print(f"{Fore.RED}[!] Error fetching {url}: {e}", file=sys.stderr)
+        return None
+
+def fetch_url_with_fallback(url: str, session: requests.Session, timeout: int, stealth_delay: tuple[float, float]):
+    resp = fetch_page(url, session, timeout, stealth_delay)
+    if resp is not None:
+        return resp
+    print(f"{Fore.YELLOW}[*] SSL failed, retrying {url} without verification...", file=sys.stderr)
+    unsafe = get_session(verify_ssl=False)
+    return fetch_page(url, unsafe, timeout, stealth_delay)
 
 # === AI REPORT ===
 def generate_recon_report(assets, domain, kws, apis):
